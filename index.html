@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Endless Shopping Scroll — MVP</title>
+  <style>
+    :root{
+      --bg:#0b0d12; --card:#12151c; --fg:#e9edf5; --muted:#9aa0aa; --acc:#7cc9ff; --ok:#6ee7a3; --bad:#ff7a7a; --border:#1f2430; --shadow:0 12px 36px rgba(0,0,0,0.4);
+      --radius:16px; --gap:12px; --tileH:176px; --maxw:1100px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif}
+    header{
+      position:sticky;top:0;z-index:10;backdrop-filter:saturate(140%) blur(10px);
+      background:rgba(11,13,18,0.7);border-bottom:1px solid var(--border)
+    }
+    .bar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;max-width:var(--maxw);margin:0 auto}
+    .brand{font-weight:700;letter-spacing:.3px}
+    .brand small{color:var(--muted);font-weight:500}
+    .bar input[type="search"]{flex:1;min-width:0;background:#0f1219;border:1px solid var(--border);border-radius:999px;padding:10px 14px;color:var(--fg)}
+    .btn{border:1px solid var(--border);background:#121623;color:var(--fg);padding:8px 12px;border-radius:999px;cursor:pointer}
+    .btn:hover{border-color:#2a3245}
+
+    .wrap{max-width:var(--maxw);margin:0 auto}
+    .grid{padding:12px;display:grid;grid-template-columns:1fr;gap:var(--gap)}
+    @media (min-width:520px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media (min-width:900px){.grid{grid-template-columns:repeat(3,1fr)}}
+
+    .card{border:1px solid var(--border);border-radius:var(--radius);background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
+    .ph{height:var(--tileH);position:relative;background:linear-gradient(135deg,#1b2130,#121926);display:grid;place-items:center}
+    .ph svg{opacity:.9}
+    .meta{padding:12px 12px 8px}
+    .title{font-weight:700;margin:0 0 6px 0;font-size:15px}
+    .price{font-weight:700}
+    .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .tag{font-size:12px;color:var(--muted);border:1px solid var(--border);padding:4px 8px;border-radius:999px}
+    .actions{display:flex;gap:8px;align-items:center;padding:8px 12px 12px}
+    .iconbtn{display:inline-flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:#121623;cursor:pointer}
+    .iconbtn:hover{border-color:#2a3245}
+    .iconbtn svg{width:16px;height:16px}
+    .why{padding:8px 12px;color:var(--muted);font-size:12px;border-top:1px dashed var(--border)}
+
+    .skeleton .ph{position:relative;overflow:hidden}
+    .skeleton .ph::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.06),rgba(255,255,255,0));animation:shimmer 1.2s infinite}
+    .skeleton .title,.skeleton .price,.skeleton .tag{background:#161b27;border-radius:8px;color:transparent}
+    .skeleton .title{height:16px}
+    .skeleton .price{height:14px;width:40%}
+    .skeleton .tag{height:20px;width:64px}
+    @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+    dialog{border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:16px;width:min(680px,92vw)}
+    dialog::backdrop{background:rgba(0,0,0,0.5)}
+    .setwrap{padding:16px}
+    .row{display:flex;gap:10px;align-items:center}
+    .row > *{flex:1}
+    .field{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+    .field input,.field textarea,.field select{background:#0f1219;border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--fg)}
+    .pill{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:999px}
+    .hr{height:1px;background:var(--border);margin:12px 0}
+    .subtle{color:var(--muted)}
+    .chip{border:1px solid var(--border);padding:4px 8px;border-radius:999px;margin-right:6px;color:var(--muted);font-size:12px}
+    .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#101521;border:1px solid var(--border);padding:10px 14px;border-radius:10px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+    .toast.show{opacity:1}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div class="brand">endless shopping scroll <small>MVP</small></div>
+      <input id="q" type="search" placeholder="What are you in the mood for today? (optional)"/>
+      <button class="btn" id="btnSettings">Settings</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div id="grid" class="grid" aria-live="polite"></div>
+    <div id="sentinel" style="height:1px"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <dialog id="settings">
+    <div class="setwrap">
+      <h3 style="margin:0 0 6px">Your signal → smarter suggestions</h3>
+      <p class="subtle" style="margin:0 0 12px">Add 2–5 purchases you <b>love</b>. We use tags + budget to steer the feed. Nothing leaves your device.</p>
+
+      <form id="happyForm">
+        <div class="row">
+          <div class="field"><label>Name</label><input name="name" required placeholder="e.g., Trail Shoes"/></div>
+          <div class="field"><label>Category</label>
+            <select name="cat">
+              <option>apparel</option><option>footwear</option><option>gadgets</option><option>bags</option><option>home</option><option>kitchen</option><option>outdoors</option><option>audio</option><option>beauty</option><option>other</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Price (EUR)</label><input name="price" type="number" min="0" step="1" placeholder="120"/></div>
+          <div class="field"><label>Satisfaction (1–10)</label><input name="sat" type="number" min="1" max="10" value="9"/></div>
+        </div>
+        <div class="field"><label>Tags (comma separated)</label>
+          <input name="tags" placeholder="minimal, durable, waterproof, neutral colors"/>
+        </div>
+        <div class="field"><label>Why it works (optional)</label>
+          <textarea name="why" rows="2" placeholder="lightweight, goes with everything, lasts forever"></textarea>
+        </div>
+        <div class="row">
+          <button class="btn" type="submit">Add Loved Purchase</button>
+          <button class="btn" type="button" id="btnExport">Export Profile</button>
+          <button class="btn" type="button" id="btnImport">Import Profile</button>
+          <button class="btn" type="button" id="btnReset">Reset</button>
+        </div>
+      </form>
+
+      <div class="hr"></div>
+
+      <div class="row">
+        <div class="field"><label>Budget per item (EUR)</label>
+          <input id="budget" type="range" min="20" max="1000" step="10" value="200"/>
+          <div class="subtle">Up to <span id="budgetVal">200</span>€ typical</div>
+        </div>
+        <div class="field"><label>Exploration vs. Precision</label>
+          <input id="explore" type="range" min="0" max="100" value="30"/>
+          <div class="subtle"><span id="exploreVal">30</span>% exploration</div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+      <div id="happyList"></div>
+
+      <div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="btn" id="closeSettings">Close</button></div>
+    </div>
+  </dialog>
+
+  <script>
+    // ---------- Utilities & Storage ----------
+    const $$ = s => document.querySelector(s);
+    const on = (el,ev,fn) => el.addEventListener(ev,fn);
+    const LSK = {
+      profile:'ess_profile_v1',
+      happies:'ess_happies_v1',
+      saved:'ess_saved_v1',
+      hidden:'ess_hidden_v1',
+      cursor:'ess_cursor_v1'
+    };
+    const ls = {
+      get:k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch(e){return null}},
+      set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),
+      del:k=>localStorage.removeItem(k)
+    };
+
+    function toast(msg){const t=$$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1200)}
+
+    // ---------- Profile from Loved Purchases ----------
+    function buildProfile(happies, budget=+$('#budget').value || 200){
+      const weights = Object.create(null);
+      let catCount = Object.create(null);
+      for(const h of happies){
+        const sat = Math.max(1, Math.min(10, +h.sat||7));
+        (h.tags||[]).forEach(tag=>{
+          const k = tag.trim().toLowerCase(); if(!k) return; weights[k]=(weights[k]||0)+sat;
+        });
+        if(h.cat){catCount[h.cat]=(catCount[h.cat]||0)+1}
+      }
+      // Normalize weights to 0..1
+      const maxw = Math.max(1, ...Object.values(weights));
+      for(const k in weights){weights[k] = +(weights[k]/maxw).toFixed(4)}
+      return { tagWeights:weights, budget, catCount };
+    }
+
+    function saveState(){ ls.set(LSK.profile, state.profile); ls.set(LSK.happies, state.happies);
+      ls.set(LSK.saved, [...state.saved]); ls.set(LSK.hidden, [...state.hidden]); ls.set(LSK.cursor, state.cursor);
+    }
+
+    function loadState(){
+      const happies = ls.get(LSK.happies) || [];
+      const profile = ls.get(LSK.profile) || buildProfile(happies);
+      const saved = new Set(ls.get(LSK.saved)||[]);
+      const hidden = new Set(ls.get(LSK.hidden)||[]);
+      const cursor = ls.get(LSK.cursor) || 0;
+      return {happies, profile, saved, hidden, cursor}
+    }
+
+    const state = Object.assign({loading:false, batch:12}, loadState());
+
+    // ---------- Mock Catalog & API (replace later) ----------
+    const TAGS = ['minimal','durable','waterproof','neutral','colorful','retro','modern','compact','wireless','organic','recycled','leather','merino','titanium','stainless','portable','quiet','noise-cancelling','smart','analog','modular','washable','lightweight','warm','breathable','4k','oled','handmade','artisan','scented','matte','glossy','magnetic','stackable'];
+    const CATS = ['apparel','footwear','gadgets','bags','home','kitchen','outdoors','audio','beauty'];
+
+    function seededRandom(seed){ let t = seed + 0x6D2B79F5; return ()=>{ t = Math.imul(t ^ t>>>15, t | 1); t ^= t + Math.imul(t ^ t>>>7, t | 61); return ((t ^ t>>>14) >>> 0) / 4294967296 } }
+
+    function makeItem(id, rng){
+      const cat = CATS[Math.floor(rng()*CATS.length)];
+      const price = Math.round((rng()*900)+20);
+      const name = titleFor(cat, rng);
+      const tags = pickSome(TAGS, rng, 3 + Math.floor(rng()*4));
+      return {id, name, cat, price, tags, score:0}
+    }
+
+    function titleFor(cat, rng){
+      const A = {
+        apparel:['Everyday Tee','Merino Crew','Thermal Hoodie','Work Pants','Linen Shirt'],
+        footwear:['Trail Runner','City Sneaker','Leather Boot','Sandals','Clogs'],
+        gadgets:['Portable Charger','Smart Light','E-ink Notepad','Mini Projector','Action Camera'],
+        bags:['Sling','Rolltop Backpack','Messenger','Duffel','Tote'],
+        home:['Desk Lamp','Throw Blanket','Air Purifier','Area Rug','Wall Shelf'],
+        kitchen:['Chef Knife','Pour-over Kettle','Skillet','Storage Set','Espresso Scale'],
+        outdoors:['Camp Chair','Compact Stove','Insulated Bottle','Hammock','Headlamp'],
+        audio:['ANC Headphones','USB Microphone','Bluetooth Speaker','DAC','IEMs'],
+        beauty:['Face Cleanser','Moisturizer','SPF 50','Hair Clay','Beard Oil']
+      }[cat] || ['Thing'];
+      const adj = ['Prime','Pro','Lite','Essential','Signature','Classic','Ultra','Mk II','Mk III'];
+      return A[Math.floor(rng()*A.length)] + ' ' + adj[Math.floor(rng()*adj.length)];
+    }
+
+    function pickSome(arr, rng, n){
+      const out=[]; const used=new Set();
+      while(out.length<n){ const i=Math.floor(rng()*arr.length); if(!used.has(i)){used.add(i); out.push(arr[i])} }
+      return out
+    }
+
+    const MockAPI = {
+      rng: seededRandom(1337),
+      async feed(cursor=0, limit=12, profile){
+        // simulate latency
+        await new Promise(r=>setTimeout(r, 320+Math.random()*280));
+        const items=[]; for(let i=0;i<limit*2;i++){ items.push(makeItem(cursor+i, this.rng)) }
+        // score & filter hidden
+        const scored = items.map(it=>({...it, score: scoreItem(it, profile)}))
+          .filter(it=>!state.hidden.has(it.id)).sort((a,b)=>b.score-a.score);
+        // exploration shuffle
+        const eps = (+$('#explore').value || 30)/100; // 0..1
+        const mixed = scored.map((x,i)=>({x, k: x.score + (Math.random()*eps)})).sort((a,b)=>b.k-a.k).map(o=>o.x);
+        const picked = mixed.slice(0, limit);
+        return { items:picked, nextCursor: cursor + limit };
+      },
+      async event(type, payload){ /* no-op for MVP; could log to localStorage */ }
+    };
+
+    // Replace with real API by setting API_BASE to your server origin
+    const API_BASE = '';
+    const API = {
+      async fetchFeed(cursor,limit,profile){
+        if(API_BASE){
+          const res = await fetch(`${API_BASE}/feed?cursor=${cursor}&limit=${limit}`, {headers:{'Content-Type':'application/json'}, method:'POST', body: JSON.stringify({ profile })});
+          return await res.json();
+        }
+        return await MockAPI.feed(cursor,limit,profile);
+      },
+      async event(type, payload){
+        if(API_BASE){ await fetch(`${API_BASE}/event`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type, payload, ts: Date.now()})}) }
+        else { /* Optionally persist lightweight analytics locally */ }
+      }
+    }
+
+    // ---------- Scoring ----------
+    function scoreItem(it, profile){
+      const tw = profile?.tagWeights || {}; let tagScore = 0; let hit=0;
+      for(const t of it.tags){ if(tw[t]){ tagScore += tw[t]; hit++ } }
+      tagScore = tagScore / Math.max(1, it.tags.length);
+      const budget = profile?.budget || 200; const diff = Math.abs(it.price - budget);
+      const priceScore = Math.max(0, 1 - (diff / Math.max(100, budget*1.2)));
+      const catPref = (profile?.catCount?.[it.cat] ? 0.1 : 0);
+      const s = +(tagScore*0.7 + priceScore*0.25 + catPref).toFixed(4);
+      return s;
+    }
+
+    // ---------- Render ----------
+    function iconHeart(filled){
+      return filled ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.35-10-8.7C-0.5 7.95 3 4 6.75 5.25 8.4 5.8 9.6 7.2 12 9.5c2.4-2.3 3.6-3.7 5.25-4.25C21 4 24.5 7.95 22 12.3 19.5 16.65 12 21 12 21z" fill="#e5597f"/></svg>'
+                   : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.1 8.64l-.1.1-.11-.1C9.14 6 5.6 6.24 3.5 8.28 1.4 10.3 1.23 13.61 3 15.93c1.77 2.32 7.69 6.07 9 6.83 1.31-.76 7.23-4.51 9-6.83 1.77-2.32 1.6-5.63-.5-7.65-2.1-2.04-5.64-2.29-8.3.36z" fill="none" stroke="#e5597f"/></svg>'
+    }
+    function iconX(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="#9aa0aa" stroke-width="2"/></svg>' }
+    function iconPlus(){ return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="#9aa0aa" stroke-width="2"/></svg>' }
+
+    function cardSkeleton(){
+      const el = document.createElement('div'); el.className='card skeleton';
+      el.innerHTML = `<div class="ph"></div>
+        <div class="meta"><div class="title"></div><div class="price" style="margin:6px 0 8px"></div>
+          <div class="tags"><div class="tag"></div><div class="tag"></div><div class="tag"></div></div></div>
+        <div class="actions"><span class="iconbtn">${iconHeart(false)}<span>&nbsp;</span></span>
+          <span class="iconbtn">${iconX()}<span>&nbsp;</span></span>
+        </div>`;
+      return el;
+    }
+
+    function cardFor(it){
+      const el = document.createElement('div'); el.className='card'; el.dataset.id = it.id;
+      const match = (state.profile?.tagWeights) ? it.tags.filter(t=>state.profile.tagWeights[t]) : [];
+      const why = match.length ? `Match on: ${match.join(', ')}` : `Exploring this category`;
+      el.innerHTML = `
+        <div class="ph" aria-hidden="true">${svgPlaceholder(it)}</div>
+        <div class="meta">
+          <div class="title">${escapeHtml(it.name)}</div>
+          <div class="row" style="justify-content:space-between;align-items:baseline">
+            <div class="price">€ ${it.price}</div>
+            <div class="subtle">${it.cat}</div>
+          </div>
+          <div class="tags">${it.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
+        </div>
+        <div class="why">${escapeHtml(why)}</div>
+        <div class="actions">
+          <button class="iconbtn act-save" title="Save">${iconHeart(state.saved.has(it.id))}<span>Save</span></button>
+          <button class="iconbtn act-hide" title="Hide">${iconX()}<span>Hide</span></button>
+          <button class="iconbtn act-more" title="More like this">${iconPlus()}<span>More like this</span></button>
+        </div>`;
+      // wire actions
+      el.querySelector('.act-hide').addEventListener('click', ()=>{ state.hidden.add(it.id); saveState(); el.remove(); API.event('hide',{id:it.id}); toast('Hidden'); });
+      el.querySelector('.act-save').addEventListener('click', (ev)=>{
+        const saved = state.saved;
+        if(saved.has(it.id)){ saved.delete(it.id); ev.currentTarget.innerHTML = iconHeart(false) + '<span>Save</span>'; toast('Removed from Saved') }
+        else { saved.add(it.id); ev.currentTarget.innerHTML = iconHeart(true) + '<span>Saved</span>'; toast('Saved') }
+        saveState(); API.event('save',{id:it.id});
+      });
+      el.querySelector('.act-more').addEventListener('click', ()=>{
+        // Nudge profile towards this card's tags
+        for(const t of it.tags){ state.profile.tagWeights[t] = +( (state.profile.tagWeights[t]||0) + 0.15 ).toFixed(4) }
+        saveState(); toast('Tuned for similar items');
+      });
+      return el;
+    }
+
+    function svgPlaceholder(it){
+      const hue = Math.floor((hashCode(it.name) % 360 + 360) % 360);
+      const bg = `hsl(${hue} 24% 18%)`; const fg = `hsl(${hue} 28% 58%)`;
+      const txt = escapeHtml(it.name.slice(0,22));
+      return `<svg viewBox="0 0 600 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${txt}">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bg}"/><stop offset="1" stop-color="#101521"/></linearGradient>
+        </defs>
+        <rect x="0" y="0" width="600" height="260" fill="url(#g)"/>
+        <rect x="28" y="28" rx="18" width="240" height="160" fill="${fg}" opacity="0.25"/>
+        <rect x="296" y="48" rx="10" width="276" height="22" fill="${fg}" opacity="0.45"/>
+        <rect x="296" y="82" rx="10" width="196" height="22" fill="${fg}" opacity="0.45"/>
+        <rect x="296" y="120" rx="10" width="236" height="18" fill="${fg}" opacity="0.25"/>
+        <rect x="296" y="146" rx="10" width="178" height="18" fill="${fg}" opacity="0.25"/>
+      </svg>`
+    }
+
+    function escapeHtml(s){ return (s+"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])) }
+    function hashCode(str){ let h=0; for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i)|0} return h }
+
+    // ---------- Endless Scroll ----------
+    async function loadMore(){
+      if(state.loading) return; state.loading=true;
+      const grid = $$('#grid');
+      const skels = Array.from({length: state.batch}, cardSkeleton); skels.forEach(s=>grid.appendChild(s));
+      try{
+        const {items, nextCursor} = await API.fetchFeed(state.cursor, state.batch, state.profile);
+        // remove skeletons
+        skels.forEach(s=>s.remove());
+        for(const it of items){ grid.appendChild(cardFor(it)) }
+        state.cursor = nextCursor; saveState();
+      }catch(e){ console.error(e); toast('Load failed') }
+      finally{ state.loading=false }
+    }
+
+    const io = new IntersectionObserver((entries)=>{
+      for(const e of entries){ if(e.isIntersecting) loadMore() }
+    }, {rootMargin:'600px'});
+
+    // ---------- Settings & Profile UI ----------
+    function renderHappies(){
+      const box = $$('#happyList');
+      if(!state.happies.length){ box.innerHTML = '<div class="subtle">No loved purchases yet. Add a couple above.</div>'; return }
+      box.innerHTML = state.happies.map((h,i)=>{
+        const tags = (h.tags||[]).slice(0,6).map(t=>`<span class="chip">${escapeHtml(t)}</span>`).join('');
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">
+          <div>
+            <div style="font-weight:600">${escapeHtml(h.name)} <span class="subtle">(${escapeHtml(h.cat)})</span></div>
+            <div class="subtle">€ ${h.price||'-'} · Satisfaction ${h.sat||'-'}</div>
+            <div>${tags}</div>
+          </div>
+          <button class="btn" data-i="${i}">Remove</button>
+        </div>`
+      }).join('');
+      box.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{
+        const i = +btn.dataset.i; state.happies.splice(i,1); state.profile = buildProfile(state.happies, +$('#budget').value); saveState(); renderHappies(); toast('Removed');
+      }))
+    }
+
+    function attachSettings(){
+      const dlg = $$('#settings');
+      on($('#btnSettings'),'click',()=>{ dlg.showModal(); renderHappies() });
+      on($('#closeSettings'),'click',()=>dlg.close());
+
+      on($('#happyForm'),'submit', (e)=>{
+        e.preventDefault(); const fd = new FormData(e.target);
+        const h = {
+          name: (fd.get('name')||'').toString().trim(),
+          cat: (fd.get('cat')||'other').toString(),
+          price: +fd.get('price')||null,
+          sat: +fd.get('sat')||9,
+          tags: (fd.get('tags')||'').toString().split(',').map(s=>s.trim()).filter(Boolean),
+          why: (fd.get('why')||'').toString().trim()
+        };
+        if(!h.name){ toast('Name required'); return }
+        state.happies.unshift(h);
+        state.profile = buildProfile(state.happies, +$('#budget').value);
+        saveState(); e.target.reset(); renderHappies(); toast('Added');
+      });
+
+      on($('#budget'),'input', (e)=>{ $('#budgetVal').textContent = e.target.value; state.profile.budget = +e.target.value; saveState() });
+      on($('#explore'),'input', (e)=>{ $('#exploreVal').textContent = e.target.value });
+
+      on($('#btnExport'),'click',()=>{
+        const data = {happies: state.happies, profile: state.profile};
+        const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+        navigator.clipboard.writeText(b64).then(()=>toast('Copied profile to clipboard'))
+      });
+      on($('#btnImport'),'click',async()=>{
+        const b64 = prompt('Paste profile string'); if(!b64) return;
+        try{
+          const json = JSON.parse(decodeURIComponent(escape(atob(b64))));
+          state.happies = json.happies||[]; state.profile = json.profile||buildProfile(state.happies);
+          $('#budget').value = state.profile.budget||200; $('#budgetVal').textContent = $('#budget').value;
+          saveState(); renderHappies(); toast('Imported')
+        }catch(e){ toast('Import failed') }
+      });
+      on($('#btnReset'),'click',()=>{
+        if(confirm('Clear profile, preferences, and feed state?')){
+          Object.values(LSK).forEach(k=>ls.del(k)); location.reload()
+        }
+      })
+    }
+
+    // ---------- Boot ----------
+    function $(sel){ return document.querySelector(sel) }
+    function $all(sel){ return Array.from(document.querySelectorAll(sel)) }
+
+    function boot(){
+      // restore UI values
+      $('#budget').value = state.profile.budget || 200; $('#budgetVal').textContent = $('#budget').value;
+      $('#exploreVal').textContent = $('#explore').value;
+      attachSettings();
+      io.observe($('#sentinel'));
+      // prime first page
+      loadMore();
+      // query influence
+      on($('#q'),'input', ()=>{ /* optional: incorporate query terms into tagWeights temporarily */ })
+    }
+
+    boot();
+  </script>
+</body>
+</html>
+
+<!--
+First API (Node.js/Express) — optional starter
+
+// server.js
+import express from 'express';
+const app = express(); app.use(express.json());
+
+// Minimal in-memory catalog; replace with DB later
+const TAGS = ['minimal','durable','waterproof','neutral','colorful','retro','modern','compact','wireless','organic','recycled','leather','merino','titanium','stainless','portable','quiet','noise-cancelling','smart','analog','modular','washable','lightweight','warm','breathable','4k','oled','handmade','artisan','scented','matte','glossy','magnetic','stackable'];
+const CATS = ['apparel','footwear','gadgets','bags','home','kitchen','outdoors','audio','beauty'];
+
+function rnd(n){return Math.floor(Math.random()*n)}
+function pick(arr,n){return Array.from({length:n},()=>arr[rnd(arr.length)])}
+function makeItem(id){
+  const cat=CATS[rnd(CATS.length)]; const price = 20 + rnd(980);
+  const names = {apparel:['Everyday Tee','Merino Crew','Thermal Hoodie','Work Pants','Linen Shirt'],footwear:['Trail Runner','City Sneaker','Leather Boot','Sandals','Clogs'],gadgets:['Portable Charger','Smart Light','E-ink Notepad','Mini Projector','Action Camera'],bags:['Sling','Rolltop Backpack','Messenger','Duffel','Tote'],home:['Desk Lamp','Throw Blanket','Air Purifier','Area Rug','Wall Shelf'],kitchen:['Chef Knife','Pour-over Kettle','Skillet','Storage Set','Espresso Scale'],outdoors:['Camp Chair','Compact Stove','Insulated Bottle','Hammock','Headlamp'],audio:['ANC Headphones','USB Microphone','Bluetooth Speaker','DAC','IEMs'],beauty:['Face Cleanser','Moisturizer','SPF 50','Hair Clay','Beard Oil'] }[cat]||['Thing'];
+  const adj=['Prime','Pro','Lite','Essential','Signature','Classic','Ultra','Mk II','Mk III'];
+  return { id, name: names[rnd(names.length)]+' '+adj[rnd(adj.length)], cat, price, tags:[...new Set(pick(TAGS, 3 + rnd(3)))] };
+}
+
+function score(it, profile){
+  const tw = profile?.tagWeights||{}; let tagScore = 0; for(const t of it.tags){ if(tw[t]) tagScore += tw[t] }
+  tagScore = tagScore / Math.max(1, it.tags.length);
+  const budget = profile?.budget||200; const diff = Math.abs(it.price-budget);
+  const priceScore = Math.max(0, 1 - (diff / Math.max(100, budget*1.2)));
+  const catPref = (profile?.catCount?.[it.cat] ? 0.1 : 0);
+  return tagScore*0.7 + priceScore*0.25 + catPref;
+}
+
+app.post('/feed', (req,res)=>{
+  const cursor = +(req.query.cursor||0); const limit = +(req.query.limit||12); const profile = req.body?.profile||{};
+  const items = Array.from({length:limit*2}, (_,i)=> makeItem(cursor+i));
+  const ranked = items.map(x=>({...x, score: score(x, profile)})).sort((a,b)=>b.score-a.score).slice(0,limit);
+  res.json({items: ranked, nextCursor: cursor + limit});
+});
+
+app.post('/event', (req,res)=>{ console.log('event', req.body); res.json({ok:true}) })
+
+app.listen(8787, ()=>console.log('API on http://localhost:8787'))
+
+// Frontend: set API_BASE to your server origin, e.g. `const API_BASE = 'http://localhost:8787'`.
+-->
