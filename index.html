@@ -28,8 +28,9 @@
     @media (min-width:520px){.grid{grid-template-columns:repeat(2,1fr)}}
     @media (min-width:900px){.grid{grid-template-columns:repeat(3,1fr)}}
 
-    .card{border:1px solid var(--border);border-radius:var(--radius);background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
+    .card{content-visibility:auto; contain-intrinsic-size: 260px 400px; border:1px solid var(--border);border-radius:var(--radius);background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
     .ph{height:var(--tileH);position:relative;background:linear-gradient(135deg,#1b2130,#121926);display:grid;place-items:center}
+    .ph img{width:100%;height:100%;object-fit:cover;display:block}
     .ph svg{opacity:.9}
     .meta{padding:12px 12px 8px}
     .title{font-weight:700;margin:0 0 6px 0;font-size:15px}
@@ -95,9 +96,27 @@
             </select>
           </div>
         </div>
+
+        <!-- Row with Satisfaction + PVR -->
         <div class="row">
-          <div class="field"><label>Price (EUR)</label><input name="price" type="number" min="0" step="1" placeholder="120"/></div>
-          <div class="field"><label>Satisfaction (1–10)</label><input name="sat" type="number" min="1" max="10" value="9"/></div>
+        <div class="field"><label>Price (EUR)</label><input name="price" type="number" min="0" step="1" placeholder="120"/></div>
+        <div class="field"><label>Satisfaction (1–10)</label><input name="sat" type="number" min="1" max="10" value="9"/></div>
+        <div class="field">
+            <label>Price-Value Ratio (Schulnote)</label>
+            <select name="pvr">
+            <option value="1">1 — sehr gut</option>
+            <option value="2">2 — gut</option>
+            <option value="3" selected>3 — befriedigend</option>
+            <option value="4">4 — ausreichend</option>
+            <option value="5">5 — mangelhaft</option>
+            <option value="6">6 — ungenügend</option>
+            </select>
+        </div>
+        </div>
+
+        <!-- URL under Tags -->
+        <div class="field"><label>URL (optional)</label>
+        <input name="url" type="url" placeholder="https://…"/>
         </div>
         <div class="field"><label>Tags (comma separated)</label>
           <input name="tags" placeholder="minimal, durable, waterproof, neutral colors"/>
@@ -154,20 +173,26 @@
 
     // ---------- Profile from Loved Purchases ----------
     function buildProfile(happies, budget=+$('#budget').value || 200){
-      const weights = Object.create(null);
-      let catCount = Object.create(null);
-      for(const h of happies){
+    const weights = Object.create(null);
+    let catCount = Object.create(null);
+    let pvrSum = 0, pvrN = 0;
+
+    for(const h of happies){
         const sat = Math.max(1, Math.min(10, +h.sat||7));
         (h.tags||[]).forEach(tag=>{
-          const k = tag.trim().toLowerCase(); if(!k) return; weights[k]=(weights[k]||0)+sat;
+        const k = tag.trim().toLowerCase(); if(!k) return; weights[k]=(weights[k]||0)+sat;
         });
         if(h.cat){catCount[h.cat]=(catCount[h.cat]||0)+1}
-      }
-      // Normalize weights to 0..1
-      const maxw = Math.max(1, ...Object.values(weights));
-      for(const k in weights){weights[k] = +(weights[k]/maxw).toFixed(4)}
-      return { tagWeights:weights, budget, catCount };
+        if(h.pvr){ pvrSum += (1 - ((+h.pvr-1)/5)); pvrN++; } // map 1..6 → 1..0
     }
+
+    const maxw = Math.max(1, ...Object.values(weights));
+    for(const k in weights){weights[k] = +(weights[k]/maxw).toFixed(4)}
+
+    const valuePref = pvrN ? +(pvrSum/pvrN).toFixed(3) : 0.6; // default mid-high
+    return { tagWeights:weights, budget, catCount, valuePref };
+    }
+
 
     function saveState(){ ls.set(LSK.profile, state.profile); ls.set(LSK.happies, state.happies);
       ls.set(LSK.saved, [...state.saved]); ls.set(LSK.hidden, [...state.hidden]); ls.set(LSK.cursor, state.cursor);
@@ -190,12 +215,14 @@
 
     function seededRandom(seed){ let t = seed + 0x6D2B79F5; return ()=>{ t = Math.imul(t ^ t>>>15, t | 1); t ^= t + Math.imul(t ^ t>>>7, t | 61); return ((t ^ t>>>14) >>> 0) / 4294967296 } }
 
-    function makeItem(id, rng){
-      const cat = CATS[Math.floor(rng()*CATS.length)];
-      const price = Math.round((rng()*900)+20);
-      const name = titleFor(cat, rng);
-      const tags = pickSome(TAGS, rng, 3 + Math.floor(rng()*4));
-      return {id, name, cat, price, tags, score:0}
+    function makeItem(id){
+    const rng = seededRandom(id + 101);           // deterministic per id
+    const cat = CATS[Math.floor(rng()*CATS.length)];
+    const price = Math.round((rng()*900)+20);
+    const name = titleFor(cat, rng);
+    const tags = pickSome(TAGS, rng, 3 + Math.floor(rng()*4));
+    const img = `https://picsum.photos/seed/${id}/600/260`;
+    return {id, name, cat, price, tags, img, score:0};
     }
 
     function titleFor(cat, rng){
@@ -256,15 +283,22 @@
 
     // ---------- Scoring ----------
     function scoreItem(it, profile){
-      const tw = profile?.tagWeights || {}; let tagScore = 0; let hit=0;
-      for(const t of it.tags){ if(tw[t]){ tagScore += tw[t]; hit++ } }
-      tagScore = tagScore / Math.max(1, it.tags.length);
-      const budget = profile?.budget || 200; const diff = Math.abs(it.price - budget);
-      const priceScore = Math.max(0, 1 - (diff / Math.max(100, budget*1.2)));
-      const catPref = (profile?.catCount?.[it.cat] ? 0.1 : 0);
-      const s = +(tagScore*0.7 + priceScore*0.25 + catPref).toFixed(4);
-      return s;
+        const tw = profile?.tagWeights || {}; let tagScore = 0;
+        for(const t of it.tags){ if(tw[t]){ tagScore += tw[t] } }
+        tagScore = tagScore / Math.max(1, it.tags.length);
+
+        const budget = profile?.budget || 200;
+        const diff = Math.abs(it.price - budget);
+        const priceScore = Math.max(0, 1 - (diff / Math.max(100, budget*1.2)));
+
+        const catPref = (profile?.catCount?.[it.cat] ? 0.1 : 0);
+        const valuePref = profile?.valuePref ?? 0.6;         // 0..1
+        const priceWeight = 0.18 + 0.22 * valuePref;         // ~0.18..0.40
+
+        const s = +(tagScore*0.7 + priceScore*priceWeight + catPref).toFixed(4);
+        return s;
     }
+
 
     // ---------- Render ----------
     function iconHeart(filled){
@@ -289,8 +323,11 @@
       const el = document.createElement('div'); el.className='card'; el.dataset.id = it.id;
       const match = (state.profile?.tagWeights) ? it.tags.filter(t=>state.profile.tagWeights[t]) : [];
       const why = match.length ? `Match on: ${match.join(', ')}` : `Exploring this category`;
+      const media = it.img
+        ? `<div class="ph"><img loading="lazy" src="${it.img}" alt=""/></div>`
+        : `<div class="ph" aria-hidden="true">${svgPlaceholder(it)}</div>`;
       el.innerHTML = `
-        <div class="ph" aria-hidden="true">${svgPlaceholder(it)}</div>
+        ${media}
         <div class="meta">
           <div class="title">${escapeHtml(it.name)}</div>
           <div class="row" style="justify-content:space-between;align-items:baseline">
@@ -388,12 +425,14 @@
       on($('#happyForm'),'submit', (e)=>{
         e.preventDefault(); const fd = new FormData(e.target);
         const h = {
-          name: (fd.get('name')||'').toString().trim(),
-          cat: (fd.get('cat')||'other').toString(),
-          price: +fd.get('price')||null,
-          sat: +fd.get('sat')||9,
-          tags: (fd.get('tags')||'').toString().split(',').map(s=>s.trim()).filter(Boolean),
-          why: (fd.get('why')||'').toString().trim()
+        name: (fd.get('name')||'').toString().trim(),
+        cat: (fd.get('cat')||'other').toString(),
+        price: +fd.get('price')||null,
+        sat: +fd.get('sat')||9,
+        pvr: +fd.get('pvr')||3,              // NEW
+        url: (fd.get('url')||'').toString().trim(), // NEW
+        tags: (fd.get('tags')||'').toString().split(',').map(s=>s.trim()).filter(Boolean),
+        why: (fd.get('why')||'').toString().trim()
         };
         if(!h.name){ toast('Name required'); return }
         state.happies.unshift(h);
